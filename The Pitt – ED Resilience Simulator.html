@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>The Pitt – ED Resilience Simulator</title>
+<style>
+:root{--bg:#f7f8fa;--fg:#1c2330;--muted:#5d6778;--card:#fff;--border:#d9dee7;--accent:#1f5fae;
+ box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12161d;--fg:#e6e9ef;--muted:#9aa4b5;--card:#1b212b;--border:#303847;--accent:#6aa5ee}}
+:root[data-theme="dark"]{--bg:#12161d;--fg:#e6e9ef;--muted:#9aa4b5;--card:#1b212b;--border:#303847;--accent:#6aa5ee}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:1100px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:0 0 2px}h2{font-size:16px;margin:0 0 8px}
+.sub{color:var(--muted);margin:0 0 14px;font-size:13px}
+.grid{display:grid;grid-template-columns:300px 1fr;gap:14px}
+@media(max-width:800px){.grid{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:14px}
+label{display:block;font-size:13px;margin:8px 0 0}
+label b{float:right;color:var(--accent)}
+input[type=range]{width:100%}
+.chk{display:flex;gap:8px;align-items:center;margin:6px 0}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:5px 8px;text-align:right;border-bottom:1px solid var(--border);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--muted);font-weight:600}
+.charts{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:800px){.charts{grid-template-columns:1fr}}
+svg{width:100%;height:auto;display:block}
+svg text{fill:var(--muted);font-size:11px}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--muted);margin-top:4px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px}
+.note{font-size:12px;color:var(--muted)}
+button{background:var(--accent);color:#fff;border:0;border-radius:6px;padding:7px 12px;font-size:13px;cursor:pointer}
+</style>
+</head>
+<body>
+<main>
+<h1>The Pitt – ED Resilience Simulator</h1>
+<p class="sub">Synthetic, simplified model of one 12-hour shift. Results are simulation outputs, not clinical predictions.</p>
+<div class="grid">
+ <div>
+  <div class="card"><h2>Conditions</h2><div id="sliders"></div></div>
+  <div class="card"><h2>Response strategy</h2><div id="strats"></div></div>
+ </div>
+ <div>
+  <div class="card"><h2>Scenario comparison <span class="note" id="nlabel"></span></h2><div class="scroll" id="table"></div></div>
+  <div class="charts">
+   <div class="card"><h2>Patients waiting</h2><div id="c1"></div></div>
+   <div class="card"><h2>Treatment-capacity utilization</h2><div id="c2"></div></div>
+  </div>
+  <div class="card"><h2>Mean and 90th percentile wait (min)</h2><div id="c3"></div><div class="legend" id="legend"></div></div>
+  <p class="note">Limitations: synthetic parameters; simplified provider, nurse and space logic; calibrated loosely to a synthetic dataset (model baseline mean wait is below it); not clinically validated.</p>
+ </div>
+</div>
+</main>
+<script>
+// ---------- simulation (port of sim.py) ----------
+const ESI_P=[0.03,0.17,0.40,0.28,0.12], TX_MEAN=[90,80,55,25,15], EVAL_MEAN=[6,8,10,8,6];
+const DEFAULTS={arrivals:21,surge:20,surgeMin:180,spaces:30,nurses:9,physicians:4,callouts:2,calloutMin:120,
+  ppn:3.0,downMin:90,downStart:240,slow:1.5,horizon:720,evalScale:1.25,
+  surgeCap:false,realloc:false,prioritize:true,downProc:false,seed:42};
+function rngFor(seed){let a=seed>>>0;return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);
+  t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function poisson(r,L){let k=0,p=1;L=Math.exp(-L);do{k++;p*=r()}while(p>L);return k-1}
+function erlang4(r,mean){let s=0;for(let i=0;i<4;i++)s-=Math.log(1-r())*mean/4;return s}
+function quantile(a,q){if(!a.length)return NaN;const s=[...a].sort((x,y)=>x-y),h=(s.length-1)*q,i=Math.floor(h);
+  return s[i]+(s[Math.min(i+1,s.length-1)]-s[i])*(h-i)}
+function run(p){
+  const r=rngFor(p.seed),pts=[],queue=[],tl=[];let active=[];const prov=Array(p.physicians).fill(0);
+  let trig=null;if(p.surge)trig=p.surgeMin;if(p.downMin)trig=Math.min(trig??1e9,p.downStart);
+  for(let t=0;t<p.horizon;t++){
+    const n=poisson(r,p.arrivals/60)+(t===p.surgeMin?p.surge:0);
+    for(let k=0;k<n;k++){const u=r();let e=0,c=ESI_P[0];while(u>c&&e<4){e++;c+=ESI_P[e]}
+      pts.push({arrive:t,esi:e+1,start:null,end:null,tx:Math.max(5,erlang4(r,TX_MEAN[e])),ev:Math.max(2,erlang4(r,p.evalScale*EVAL_MEAN[e]))});
+      queue.push(pts.length-1)}
+    const down=p.downMin&&t>=p.downStart&&t<p.downStart+p.downMin;
+    const slow=down?(p.downProc?1.2:p.slow):1;
+    let spaces=p.spaces,nurses=p.nurses;if(t>=p.calloutMin)nurses-=p.callouts;
+    if(trig!==null&&t>=trig+30){if(p.surgeCap)spaces+=6;if(p.realloc)nurses+=2}
+    const cap=Math.min(spaces,Math.max(nurses,0)*p.ppn);
+    active=active.filter(a=>a>t);
+    const order=p.prioritize?[...queue].sort((a,b)=>pts[a].esi-pts[b].esi||pts[a].arrive-pts[b].arrive):[...queue];
+    for(const i of order){const f=prov.findIndex(x=>x<=t);if(f<0||active.length>=cap)break;
+      const ev=pts[i].ev*slow;prov[f]=t+ev;pts[i].start=t;pts[i].end=t+ev+pts[i].tx*slow;active.push(pts[i].end);
+      queue.splice(queue.indexOf(i),1)}
+    tl.push({waiting:queue.length,util:cap?active.length/cap:1})}
+  const w=pts.map(x=>({esi:x.esi,wait:(x.start??p.horizon)-x.arrive})),hi=w.filter(x=>x.esi<=2).map(x=>x.wait),all=w.map(x=>x.wait);
+  const sum=a=>a.reduce((s,x)=>s+x,0);
+  return{tl,m:{arrivals:pts.length,treated:pts.filter(x=>x.end!==null&&x.end<=p.horizon).length,
+    stillWaiting:pts.filter(x=>x.start===null).length,meanWait:sum(all)/all.length,p90:quantile(all,.9),
+    hiWait:hi.length?sum(hi)/hi.length:NaN,peakWaiting:Math.max(...tl.map(x=>x.waiting)),
+    meanUtil:sum(tl.map(x=>x.util))/tl.length}}}
+function runMany(p,n){const rows=[];for(let i=0;i<n;i++)rows.push(run({...p,seed:p.seed+i}).m);
+  const o={};for(const k of Object.keys(rows[0]))o[k]=rows.reduce((s,x)=>s+x[k],0)/n;return o}
+
+// ---------- UI ----------
+if(typeof document!=="undefined"){
+const S=[["arrivals","Baseline arrivals / hour",10,40,1],["surge","Mass-casualty surge (patients at once)",0,60,1],
+ ["spaces","Treatment spaces",10,50,1],["nurses","Nurses on duty",4,20,1],["physicians","Physicians on duty",1,8,1],
+ ["callouts","Nurse call-outs (mid-shift)",0,6,1],["downMin","EHR outage (minutes)",0,240,15],["runs","Replicate runs per case",1,40,1]];
+const C=[["surgeCap","Activate surge capacity (+6 spaces)"],["realloc","Reallocate staff (+2 nurses)"],
+ ["prioritize","Prioritize high acuity"],["downProc","Downtime documentation procedure"]];
+const st={...DEFAULTS,runs:15};
+const $=id=>document.getElementById(id);
+$("sliders").innerHTML=S.map(([k,l,a,b,s])=>`<label>${l}<b id="v_${k}">${st[k]}</b><input type="range" id="${k}" min="${a}" max="${b}" step="${s}" value="${st[k]}"></label>`).join("");
+$("strats").innerHTML=C.map(([k,l])=>`<label class="chk"><input type="checkbox" id="${k}" ${st[k]?"checked":""}> ${l}</label>`).join("");
+S.forEach(([k])=>$(k).oninput=e=>{st[k]=+e.target.value;$("v_"+k).textContent=st[k];update()});
+C.forEach(([k])=>$(k).onchange=e=>{st[k]=e.target.checked;update()});
+const COL=["#1f77b4","#e8743b","#2ca58d"];
+function lineChart(el,series,ymax,fmt){
+  const W=460,H=250,L=40,B=26,T=8,R=8,n=series[0].length,x=i=>L+i/(n-1)*(W-L-R),y=v=>T+(1-v/ymax)*(H-T-B);
+  let g="";for(let i=0;i<=4;i++){const v=ymax*i/4;g+=`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--border)"/><text x="${L-5}" y="${y(v)+4}" text-anchor="end">${fmt(v)}</text>`}
+  for(let m=0;m<=720;m+=120)g+=`<text x="${x(m)}" y="${H-8}" text-anchor="middle">${m}</text>`;
+  const paths=series.map((s,j)=>`<polyline fill="none" stroke="${COL[j]}" stroke-width="2" points="${s.map((v,i)=>x(i).toFixed(1)+","+y(Math.min(v,ymax)).toFixed(1)).join(" ")}"/>`).join("");
+  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img">${g}${paths}<text x="${W/2}" y="${H}" text-anchor="middle" style="font-size:10px">minute of shift</text></svg>`}
+function barChart(el,names,a,b){
+  const W=700,H=250,L=40,B=34,T=8,max=Math.max(...a,...b)*1.1||1,gw=(W-L-8)/names.length,y=v=>T+(1-v/max)*(H-T-B);
+  let g="";for(let i=0;i<=4;i++){const v=max*i/4;g+=`<line x1="${L}" x2="${W-8}" y1="${y(v)}" y2="${y(v)}" stroke="var(--border)"/><text x="${L-5}" y="${y(v)+4}" text-anchor="end">${Math.round(v)}</text>`}
+  names.forEach((nm,i)=>{const x0=L+i*gw+gw*.15,bw=gw*.3;
+    [[a[i],COL[0],0],[b[i],COL[1],1]].forEach(([v,c,j])=>{g+=`<rect x="${x0+j*bw}" y="${y(v)}" width="${bw-2}" height="${H-B-y(v)}" fill="${c}"/><text x="${x0+j*bw+bw/2-1}" y="${y(v)-3}" text-anchor="middle">${v.toFixed(0)}</text>`});
+    g+=`<text x="${L+i*gw+gw/2}" y="${H-14}" text-anchor="middle">${nm}</text>`});
+  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img">${g}</svg>`}
+function update(){
+  const p={...st},base={...p,surge:0,callouts:0,downMin:0,surgeCap:false,realloc:false,downProc:false};
+  const none={...p,surgeCap:false,realloc:false,downProc:false,prioritize:false};
+  const cases=[["Baseline",base],["Stressed, no response",none],["Stressed + response",p]];
+  const res=cases.map(([n,q])=>({n,m:runMany(q,st.runs),tl:run(q).tl}));
+  $("nlabel").textContent=`(mean of ${st.runs} runs)`;
+  const cols=[["Arrivals","arrivals",0],["Treated","treated",0],["Still waiting","stillWaiting",1],["Mean wait","meanWait",1],["P90 wait","p90",1],["ESI 1–2 wait","hiWait",1],["Peak waiting","peakWaiting",0],["Mean util.","meanUtil",2]];
+  $("table").innerHTML=`<table><tr><th></th>${cols.map(c=>`<th>${c[0]}</th>`).join("")}</tr>${res.map(r=>`<tr><td>${r.n}</td>${cols.map(([,k,d])=>`<td>${r.m[k].toFixed(d)}</td>`).join("")}</tr>`).join("")}</table>`;
+  lineChart($("c1"),res.map(r=>r.tl.map(x=>x.waiting)),Math.max(10,...res.flatMap(r=>r.tl.map(x=>x.waiting))),v=>Math.round(v));
+  lineChart($("c2"),res.map(r=>r.tl.map(x=>x.util)),1,v=>Math.round(v*100)+"%");
+  barChart($("c3"),res.map(r=>r.n),res.map(r=>r.m.meanWait),res.map(r=>r.m.p90));
+  $("legend").innerHTML=res.map((r,j)=>`<span><i style="background:${COL[j]}"></i>${r.n} (lines)</span>`).join("")+`<span>Bars: blue = mean, orange = P90</span>`}
+update();
+}
+</script>
+</body>
+</html>
