@@ -1,0 +1,9 @@
+resource,baseline_available,unit,replenishment_or_recovery_minutes,constraint_note
+Monitored treatment spaces,12,spaces,0,Synthetic planning assumption; local facility data should replace
+General treatment spaces,18,spaces,0,Synthetic planning assumption; local facility data should replace
+Nurses on duty,9,staff,45,Illustrative staffing baseline; not a staffing recommendation
+Physicians on duty,4,staff,60,Illustrative staffing baseline; not a staffing recommendation
+Portable monitors,10,units,30,Example resource category
+Trauma supply kits,14,kits,45,Example resource category; contents not specified
+Downtime documentation packs,25,packs,20,Supports tabletop downtime scenario only
+Transport teams,3,teams,60,Illustrative capacity assumption

@@ -1,0 +1,9 @@
+show_season,episode_number,episode_time_title,documented_theme,emergency_management_lens,data_type,confidence
+1,1,7:00 A.M.,New interns begin work in a busy emergency department,"Onboarding, supervision, role clarity",episode_summary_coded_theme,high-level public synopsis
+1,3,9:00 A.M.,Teen overdose creates conflict in the ER,"Behavioral health response, coordination, safeguarding",episode_summary_coded_theme,high-level public synopsis
+1,8,2:00 P.M.,Team attempts to resuscitate a young drowning victim,"Time-critical response, pediatric emergency readiness",episode_summary_coded_theme,high-level public synopsis
+1,12,6:00 P.M.,Dozens of critical patients arrive and supplies diminish,"Mass-casualty triage, surge capacity, supply conservation",episode_summary_coded_theme,high-level public synopsis
+1,13,7:00 P.M.,Mass-casualty response continues into the next hour,"Sustained incident operations, handoff, staff endurance",episode_summary_coded_theme,high-level public synopsis
+2,4,10:00 A.M.,Nearby hospital closure redirects emergency cases,"Regional mutual aid, capacity planning, patient redistribution",episode_summary_coded_theme,high-level public synopsis
+2,9,3:00 P.M.,Systems remain down and low-tech workflow support is brought in,"Downtime procedures, paper documentation, continuity of operations",episode_summary_coded_theme,high-level public synopsis
+2,10,4:00 P.M.,Water-park incident sends several critical patients to the ER,"Multi-casualty intake, triage, resource staging",episode_summary_coded_theme,high-level public synopsis
